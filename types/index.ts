@@ -25,6 +25,13 @@ export interface KnowledgeImage {
   notes?: string;
   createdAt: string;
   updatedAt: string;
+
+  // Multi-image item grouping (shared across photos of the same real-world thing)
+  itemId?: string;          // UUID shared by all photos of the same item
+  itemName?: string;        // e.g. "A/C Unit – Master Bedroom"
+  role?: string;            // e.g. "Front View", "Side View", "Manufacturer Placard"
+  isCover?: boolean;        // true = representative image shown in main gallery
+  sortOrder?: number;       // order within the item group
 }
 
 export type SortOption = "newest" | "oldest" | "name" | "size";
