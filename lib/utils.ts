@@ -42,7 +42,7 @@ export function loadImageDimensions(dataUrl: string): Promise<{ width: number; h
   });
 }
 
-export function fileToDataUrl(file: File): Promise<string> {
+export function fileToDataUrl(file: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result as string);
