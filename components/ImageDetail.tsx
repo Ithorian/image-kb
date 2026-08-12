@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   Dialog,
   DialogContent,
@@ -14,7 +14,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Download,
   Trash2,
@@ -25,11 +24,19 @@ import {
   Maximize2,
   Plus,
   Star,
+  Pencil,
 } from "lucide-react";
 import { TagInput } from "@/components/TagInput";
 import { ExtensibleSelect } from "@/components/ExtensibleSelect";
 import { AnnotationCanvas } from "@/components/AnnotationCanvas";
-import { formatBytes, formatDate, downloadDataUrl, cn } from "@/lib/utils";
+import { PhotoInfoPanel } from "@/components/PhotoInfoPanel";
+import { SortableFilmStrip } from "@/components/SortableFilmStrip";
+import {
+  formatBytes,
+  formatDate,
+  downloadDataUrl,
+  cn,
+} from "@/lib/utils";
 import { exportAnnotatedImage } from "@/lib/annotation-utils";
 import { recommendFilename } from "@/lib/filename-recommender";
 import { getRelatedImages } from "@/lib/filter";
@@ -59,14 +66,27 @@ export function ImageDetail({
 }: ImageDetailProps) {
   const [local, setLocal] = useState<KnowledgeImage | null>(null);
   const [saving, setSaving] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+
+  const editScrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (image) {
       setLocal({ ...image });
+      setEditMode(false);
     } else {
       setLocal(null);
     }
   }, [image]);
+
+  useEffect(() => {
+    if (editMode) {
+      const id = requestAnimationFrame(() => {
+        editScrollRef.current?.focus({ preventScroll: true });
+      });
+      return () => cancelAnimationFrame(id);
+    }
+  }, [editMode]);
 
   const related = useMemo(() => {
     if (!local?.itemId) return local ? [local] : [];
@@ -284,12 +304,27 @@ export function ImageDetail({
                   : local.originalName}
               </DialogDescription>
             </div>
+            <Button
+              type="button"
+              variant={editMode ? "default" : "outline"}
+              size="sm"
+              className="shrink-0 gap-1.5 mr-6"
+              onClick={() => setEditMode((e) => !e)}
+            >
+              <Pencil className="h-3.5 w-3.5" />
+              {editMode ? "Editing" : "Edit"}
+            </Button>
           </div>
         </DialogHeader>
 
-        <div className="flex-1 flex flex-col lg:flex-row min-h-0 overflow-hidden">
-          {/* Main visual area */}
-          <div className="flex-1 min-h-[300px] lg:min-h-0 bg-muted/30 relative flex flex-col">
+        <div
+          className={cn(
+            "flex-1 flex min-h-0 overflow-hidden",
+            editMode ? "flex-row" : "flex-col"
+          )}
+        >
+          {/* Main visual — full width in view; shares row when editing */}
+          <div className="flex-1 min-h-0 min-w-0 bg-muted/30 relative flex flex-col">
             <div className="flex-1 relative min-h-0 overflow-hidden">
               <AnnotationCanvas
                 className="h-full"
@@ -300,7 +335,21 @@ export function ImageDetail({
               />
             </div>
 
-            {/* Related images + Add photo — z-10 so canvas can't cover clicks */}
+            <div className="relative z-10 shrink-0">
+              <PhotoInfoPanel
+                image={local}
+                listing={{
+                  itemName: local.itemName,
+                  category: local.category,
+                  location: local.location,
+                  itemType: local.itemType,
+                }}
+                photoCount={related.length}
+                variant="band"
+                defaultOpen={false}
+              />
+            </div>
+
             <div className="relative z-10 shrink-0 border-t bg-background/95 p-3 space-y-2">
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs text-muted-foreground">
@@ -310,234 +359,221 @@ export function ImageDetail({
                 <label
                   htmlFor="image-kb-detail-add-photo"
                   className="inline-flex items-center justify-center gap-1 h-7 px-2.5 text-xs font-medium rounded-md border border-input bg-background hover:bg-accent hover:text-accent-foreground cursor-pointer"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    const el = document.getElementById(
-                      "image-kb-detail-add-photo"
-                    ) as HTMLInputElement | null;
-                    if (!el) {
-                      toast.error("File input not found in page");
-                      return;
-                    }
-                    toast.message("Opening file picker…");
-                    el.click();
-                  }}
                 >
                   <Plus className="h-3.5 w-3.5" />
                   Add photo
                 </label>
               </div>
-              <div className="flex gap-2 overflow-x-auto pb-1">
-                {related.map((img) => (
-                  <button
-                    key={img.id}
-                    type="button"
-                    onClick={() => handleSelectRelated(img)}
-                    className={cn(
-                      "relative shrink-0 w-20 h-16 rounded-md overflow-hidden border-2 transition-all",
-                      img.id === local.id
-                        ? "border-primary ring-2 ring-primary/30"
-                        : "border-transparent hover:border-muted-foreground/40"
-                    )}
-                  >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={img.dataUrl}
-                      alt={img.role || img.recommendedName}
-                      className="w-full h-full object-cover"
-                    />
-                    {img.isCover && (
-                      <span className="absolute top-0.5 left-0.5 bg-amber-500 text-black text-[8px] font-medium px-1 rounded">
-                        Cover
-                      </span>
-                    )}
-                    {img.role && (
-                      <span className="absolute bottom-0 inset-x-0 bg-black/60 text-[9px] text-white text-center truncate px-0.5">
-                        {img.role}
-                      </span>
-                    )}
-                  </button>
-                ))}
-              </div>
+
+              {editMode && related.length > 1 && (
+                <p className="text-[10px] text-muted-foreground">
+                  Drag photos to reorder · order saves on drop · cover stays until you set a new one
+                </p>
+              )}
+              <SortableFilmStrip
+                images={related}
+                selectedId={local.id}
+                sortable={editMode && related.length > 1}
+                onSelect={handleSelectRelated}
+                onReorder={async (ordered) => {
+                  for (const img of ordered) {
+                    await Promise.resolve(onUpdate(img));
+                    if (img.id === local.id) {
+                      setLocal(img);
+                    }
+                  }
+                }}
+              />
             </div>
           </div>
 
-          {/* Sidebar — Item name, Category, Location, Type, etc. */}
-          <div className="w-full lg:w-80 border-t lg:border-t-0 lg:border-l flex flex-col bg-background shrink-0">
-            <ScrollArea className="flex-1">
-              <div className="p-4 space-y-5">
-                {local.itemId && (
-                  <div className="space-y-2">
-                    <Label htmlFor="itemName">Item name</Label>
-                    <Input
-                      id="itemName"
-                      value={local.itemName || ""}
-                      onChange={(e) => handleItemNameChange(e.target.value)}
-                      placeholder="e.g. Kitchen Dishwasher"
+          {/* Sidebar — Edit mode only */}
+          {editMode && (
+            <div className="w-80 max-w-[40vw] h-full border-l flex flex-col bg-background shrink-0 ring-2 ring-inset ring-primary/40 overflow-hidden">
+              <div
+                ref={editScrollRef}
+                tabIndex={0}
+                className="flex-1 min-h-0 overflow-y-auto overscroll-contain outline-none focus-visible:ring-0 [scrollbar-width:thin] [scrollbar-color:hsl(var(--border))_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-border [&::-webkit-scrollbar-track]:bg-transparent"
+              >
+                <div className="p-4 space-y-5">
+                  <p className="text-xs text-primary font-medium">
+                    Edit mode — update fields, then Save changes
+                  </p>
+
+                  {local.itemId && (
+                    <div className="space-y-2">
+                      <Label htmlFor="itemName">Item name</Label>
+                      <Input
+                        id="itemName"
+                        value={local.itemName || ""}
+                        onChange={(e) => handleItemNameChange(e.target.value)}
+                        placeholder="e.g. Kitchen Dishwasher"
+                      />
+                    </div>
+                  )}
+
+                  <div className="space-y-3">
+                    <ExtensibleSelect
+                      kind="category"
+                      label="Category"
+                      value={local.category || ""}
+                      onChange={(v) => handleFieldChange("category", v)}
+                      placeholder="Home, Tool, Vehicle…"
+                    />
+                    <ExtensibleSelect
+                      kind="location"
+                      label="Location / Room"
+                      value={local.location || ""}
+                      onChange={(v) => handleFieldChange("location", v)}
+                      placeholder="Kitchen, Garage…"
+                    />
+                    <ExtensibleSelect
+                      kind="itemType"
+                      label="Type"
+                      value={local.itemType || ""}
+                      onChange={(v) => handleFieldChange("itemType", v)}
+                      placeholder="Appliance, HVAC…"
                     />
                   </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="role">Photo Description</Label>
+                    <Input
+                      id="role"
+                      value={local.role || ""}
+                      onChange={(e) => handleRoleChange(e.target.value)}
+                      placeholder="e.g. Front View, Side View, Manufacturer Placard"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="filename">Recommended filename</Label>
+                    <Input
+                      id="filename"
+                      value={local.recommendedName}
+                      onChange={(e) => handleNameChange(e.target.value)}
+                    />
+                    <p className="text-[10px] text-muted-foreground">
+                      Auto-updates when category / location / type / role change
+                    </p>
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label>Tags</Label>
+                    <TagInput
+                      tags={local.tags || []}
+                      onChange={handleTagsChange}
+                      allTags={allTags}
+                      placeholder="Add tags..."
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="notes">Notes</Label>
+                    <Textarea
+                      id="notes"
+                      value={local.notes || ""}
+                      onChange={(e) => handleNotesChange(e.target.value)}
+                      placeholder="Optional notes about this image..."
+                      rows={3}
+                    />
+                  </div>
+
+                  <Separator />
+
+                  <div className="space-y-3">
+                    <h4 className="text-sm font-medium">Metadata</h4>
+                    <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
+                      <div className="flex items-center gap-1.5">
+                        <Maximize2 className="h-3.5 w-3.5" />
+                        <span>
+                          {local.width} × {local.height}
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <HardDrive className="h-3.5 w-3.5" />
+                        <span>{formatBytes(local.size)}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <FileImage className="h-3.5 w-3.5" />
+                        <span className="truncate">{local.mimeType}</span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Calendar className="h-3.5 w-3.5" />
+                        <span>{formatDate(local.createdAt)}</span>
+                      </div>
+                    </div>
+                    {local.annotations.length > 0 && (
+                      <Badge variant="secondary" className="text-xs">
+                        {local.annotations.length} annotation
+                        {local.annotations.length !== 1 ? "s" : ""}
+                      </Badge>
+                    )}
+                    {local.isCover && (
+                      <Badge variant="outline" className="text-xs">
+                        Cover image
+                      </Badge>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="p-4 border-t space-y-2 shrink-0 bg-background">
+                <Button
+                  className="w-full gap-2"
+                  onClick={handleSave}
+                  disabled={saving}
+                >
+                  <Save className="h-4 w-4" />
+                  {saving ? "Saving..." : "Save changes"}
+                </Button>
+
+                {!local.isCover && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full gap-1.5"
+                    onClick={handleSetCover}
+                  >
+                    <Star className="h-3.5 w-3.5" />
+                    Set as cover image
+                  </Button>
                 )}
 
-                <div className="space-y-3">
-                  <ExtensibleSelect
-                    kind="category"
-                    label="Category"
-                    value={local.category || ""}
-                    onChange={(v) => handleFieldChange("category", v)}
-                    placeholder="Home, Tool, Vehicle…"
-                  />
-                  <ExtensibleSelect
-                    kind="location"
-                    label="Location / Room"
-                    value={local.location || ""}
-                    onChange={(v) => handleFieldChange("location", v)}
-                    placeholder="Kitchen, Garage…"
-                  />
-                  <ExtensibleSelect
-                    kind="itemType"
-                    label="Type"
-                    value={local.itemType || ""}
-                    onChange={(v) => handleFieldChange("itemType", v)}
-                    placeholder="Appliance, HVAC…"
-                  />
+                <div className="grid grid-cols-2 gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={handleDownloadOriginal}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Original
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1.5"
+                    onClick={handleDownloadAnnotated}
+                    disabled={local.annotations.length === 0}
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                    Annotated
+                  </Button>
                 </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="role">Photo Description</Label>
-                  <Input
-                    id="role"
-                    value={local.role || ""}
-                    onChange={(e) => handleRoleChange(e.target.value)}
-                    placeholder="e.g. Front View, Side View, Manufacturer Placard"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="filename">Recommended filename</Label>
-                  <Input
-                    id="filename"
-                    value={local.recommendedName}
-                    onChange={(e) => handleNameChange(e.target.value)}
-                  />
-                  <p className="text-[10px] text-muted-foreground">
-                    Auto-updates when category / location / type / role change
-                  </p>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Tags</Label>
-                  <TagInput
-                    tags={local.tags || []}
-                    onChange={handleTagsChange}
-                    allTags={allTags}
-                    placeholder="Add tags..."
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="notes">Notes</Label>
-                  <Textarea
-                    id="notes"
-                    value={local.notes || ""}
-                    onChange={(e) => handleNotesChange(e.target.value)}
-                    placeholder="Optional notes about this image..."
-                    rows={3}
-                  />
-                </div>
-
-                <Separator />
-
-                <div className="space-y-3">
-                  <h4 className="text-sm font-medium">Metadata</h4>
-                  <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground">
-                    <div className="flex items-center gap-1.5">
-                      <Maximize2 className="h-3.5 w-3.5" />
-                      <span>
-                        {local.width} × {local.height}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <HardDrive className="h-3.5 w-3.5" />
-                      <span>{formatBytes(local.size)}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <FileImage className="h-3.5 w-3.5" />
-                      <span className="truncate">{local.mimeType}</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                      <Calendar className="h-3.5 w-3.5" />
-                      <span>{formatDate(local.createdAt)}</span>
-                    </div>
-                  </div>
-                  {local.annotations.length > 0 && (
-                    <Badge variant="secondary" className="text-xs">
-                      {local.annotations.length} annotation
-                      {local.annotations.length !== 1 ? "s" : ""}
-                    </Badge>
-                  )}
-                  {local.isCover && (
-                    <Badge variant="outline" className="text-xs">
-                      Cover image
-                    </Badge>
-                  )}
-                </div>
-              </div>
-            </ScrollArea>
-
-            <div className="p-4 border-t space-y-2 shrink-0">
-              <Button
-                className="w-full gap-2"
-                onClick={handleSave}
-                disabled={saving}
-              >
-                <Save className="h-4 w-4" />
-                {saving ? "Saving..." : "Save changes"}
-              </Button>
-
-              {!local.isCover && (
                 <Button
-                  variant="outline"
+                  variant="destructive"
                   size="sm"
                   className="w-full gap-1.5"
-                  onClick={handleSetCover}
+                  onClick={handleDelete}
                 >
-                  <Star className="h-3.5 w-3.5" />
-                  Set as cover image
-                </Button>
-              )}
-
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={handleDownloadOriginal}
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Original
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1.5"
-                  onClick={handleDownloadAnnotated}
-                  disabled={local.annotations.length === 0}
-                >
-                  <Download className="h-3.5 w-3.5" />
-                  Annotated
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Delete from KB
                 </Button>
               </div>
-              <Button
-                variant="destructive"
-                size="sm"
-                className="w-full gap-1.5"
-                onClick={handleDelete}
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-                Delete from KB
-              </Button>
             </div>
-          </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>

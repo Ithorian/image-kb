@@ -83,13 +83,19 @@ export function drawAnnotation(
     }
     case "text": {
       if (!ann.text || pts.length < 2) break;
-      const fontSize = (ann.fontSize || 16) * (width / 800);
-      ctx.font = `${fontSize}px Inter, system-ui, sans-serif`;
+      // Scale vs ~500px reference; floor so labels stay readable
+      const fontSize = Math.max(
+        14,
+        (ann.fontSize || 28) * (width / 500)
+      );
+      ctx.font = `600 ${fontSize}px Inter, system-ui, sans-serif`;
       ctx.textBaseline = "top";
-      ctx.shadowColor = "rgba(0,0,0,0.5)";
-      ctx.shadowBlur = 3;
+      // Halo for contrast on light/dark areas
+      ctx.lineWidth = Math.max(2, fontSize / 12);
+      ctx.strokeStyle = "rgba(0,0,0,0.75)";
+      ctx.strokeText(ann.text, pts[0] * width, pts[1] * height);
+      ctx.fillStyle = ann.color;
       ctx.fillText(ann.text, pts[0] * width, pts[1] * height);
-      ctx.shadowBlur = 0;
       break;
     }
   }

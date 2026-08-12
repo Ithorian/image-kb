@@ -293,7 +293,7 @@ export function AnnotationCanvas({
       color,
       strokeWidth,
       text: textValue.trim(),
-      fontSize: 18,
+      fontSize: 12 + strokeWidth * 4,
     };
     pushHistory([...annotations, newAnn]);
     setTextInput(null);

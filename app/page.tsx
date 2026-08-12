@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import Link from "next/link";
 import { Upload, Download, Trash2, BookImage, Plus } from "lucide-react";
 import { KnowledgeImage } from "@/types";
 import {
@@ -259,6 +260,9 @@ export default function HomePage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <Button size="sm" variant="ghost" className="gap-1.5" asChild>
+              <Link href="/listings">Listings</Link>
+            </Button>
             <Button
               size="sm"
               onClick={() => setUploadOpen(true)}
