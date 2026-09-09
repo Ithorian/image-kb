@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { Upload, Download, Trash2, BookImage, Plus } from "lucide-react";
 import { KnowledgeImage } from "@/types";
 import {
@@ -27,10 +28,31 @@ import {
 } from "@/components/ui/dialog";
 import { toast } from "sonner";
 import { v4 as uuidv4 } from "uuid";
-import { fileToDataUrl, loadImageDimensions } from "@/lib/utils";
+import {
+  fileToDataUrl,
+  loadImageDimensions,
+  parsePastedItemId,
+} from "@/lib/utils";
 import { recommendFilename } from "@/lib/filename-recommender";
 
 export default function HomePage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-screen text-muted-foreground">
+          Loading Knowledge Base…
+        </div>
+      }
+    >
+      <HomePageInner />
+    </Suspense>
+  );
+}
+
+function HomePageInner() {
+  const searchParams = useSearchParams();
+  const itemIdParam = parsePastedItemId(searchParams.get("itemId") ?? "");
+  const queryItemId = itemIdParam.ok ? itemIdParam.value : undefined;
   const [images, setImages] = useState<KnowledgeImage[]>([]);
   const [allTags, setAllTags] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
@@ -313,6 +335,7 @@ export default function HomePage() {
         ) : (
           <ImageGallery
             images={images}
+            filterItemId={queryItemId}
             onView={handleView}
             onDelete={handleDelete}
             onUploadClick={() => setUploadOpen(true)}
@@ -337,7 +360,11 @@ export default function HomePage() {
               more photos. Close only with the X when done or after saving.
             </DialogDescription>
           </DialogHeader>
-          <ImageUploader allTags={allTags} onUpload={handleUpload} />
+          <ImageUploader
+            allTags={allTags}
+            onUpload={handleUpload}
+            initialItemId={queryItemId}
+          />
         </DialogContent>
       </Dialog>
 

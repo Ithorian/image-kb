@@ -28,6 +28,8 @@ interface ImageGalleryProps {
   onDelete: (id: string) => void;
   onUploadClick: () => void;
   className?: string;
+  /** When set (valid `?itemId=`), show only photos with that itemId. */
+  filterItemId?: string;
 }
 
 export function ImageGallery({
@@ -36,6 +38,7 @@ export function ImageGallery({
   onDelete,
   onUploadClick,
   className,
+  filterItemId,
 }: ImageGalleryProps) {
   const [search, setSearch] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -44,13 +47,15 @@ export function ImageGallery({
   const allTags = useMemo(() => getUniqueTags(images), [images]);
 
   const filtered = useMemo(() => {
-    const covers = getCoverImages(images);
-    return filterAndSortImages(covers, {
+    const source = filterItemId
+      ? images.filter((img) => img.itemId === filterItemId)
+      : getCoverImages(images);
+    return filterAndSortImages(source, {
       search,
       selectedTags,
       sort,
     });
-  }, [images, search, selectedTags, sort]);
+  }, [images, search, selectedTags, sort, filterItemId]);
 
   const toggleTag = (tag: string) => {
     setSelectedTags((prev) =>
@@ -135,13 +140,36 @@ export function ImageGallery({
 
         <div className="text-xs text-muted-foreground">
           {filtered.length} of {images.length} image{images.length !== 1 ? "s" : ""}
+          {filterItemId && " · filtered by itemId"}
           {selectedTags.length > 0 &&
             ` · filtered by ${selectedTags.length} tag${selectedTags.length !== 1 ? "s" : ""}`}
         </div>
       </div>
 
       <div className="flex-1 overflow-auto p-4 custom-scrollbar">
-        {images.length === 0 ? (
+        {filterItemId &&
+        filtered.length === 0 &&
+        !search &&
+        selectedTags.length === 0 ? (
+          <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center gap-4">
+            <div className="rounded-full bg-muted p-6">
+              <ImageIcon className="h-12 w-12 text-muted-foreground" />
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold">No photos for this itemId yet</h3>
+              <p className="text-sm text-muted-foreground mt-1 max-w-sm font-mono break-all">
+                {filterItemId}
+              </p>
+              <p className="text-sm text-muted-foreground mt-1 max-w-sm">
+                Upload photos with this Knowledge-base itemId to join the notebook listing.
+              </p>
+            </div>
+            <Button onClick={onUploadClick} size="lg" className="gap-2 mt-2">
+              <Upload className="h-4 w-4" />
+              Upload photos for this item
+            </Button>
+          </div>
+        ) : images.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full min-h-[400px] text-center gap-4">
             <div className="rounded-full bg-muted p-6">
               <ImageIcon className="h-12 w-12 text-muted-foreground" />
