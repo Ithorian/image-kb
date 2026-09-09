@@ -22,7 +22,14 @@ import { Badge } from "@/components/ui/badge";
 import { TagInput } from "@/components/TagInput";
 import { ExtensibleSelect } from "@/components/ExtensibleSelect";
 import { recommendFilename } from "@/lib/filename-recommender";
-import { fileToDataUrl, loadImageDimensions, formatBytes, cn } from "@/lib/utils";
+import {
+  fileToDataUrl,
+  loadImageDimensions,
+  formatBytes,
+  cn,
+  parsePastedItemId,
+  ITEM_ID_ERROR,
+} from "@/lib/utils";
 import type { KnowledgeImage } from "@/types";
 
 interface PendingFile {
@@ -43,16 +50,24 @@ interface ImageUploaderProps {
   onUpload: (images: KnowledgeImage[]) => Promise<void> | void;
   allTags?: string[];
   className?: string;
+  /** Prefill from `/?itemId=` when valid. Empty / invalid → blank field. */
+  initialItemId?: string;
 }
 
-export function ImageUploader({ onUpload, allTags = [], className }: ImageUploaderProps) {
+export function ImageUploader({
+  onUpload,
+  allTags = [],
+  className,
+  initialItemId,
+}: ImageUploaderProps) {
   const [pending, setPending] = React.useState<PendingFile[]>([]);
   const [itemName, setItemName] = React.useState("");
   const [category, setCategory] = React.useState("");
   const [location, setLocation] = React.useState("");
   const [itemType, setItemType] = React.useState("");
   const [tags, setTags] = React.useState<string[]>([]);
-  const [itemId] = React.useState(() => uuidv4());
+  const [itemIdInput, setItemIdInput] = React.useState("");
+  const [itemIdError, setItemIdError] = React.useState<string | null>(null);
   const [isDragging, setIsDragging] = React.useState(false);
   const [isUploading, setIsUploading] = React.useState(false);
   const [selectedId, setSelectedId] = React.useState<string | null>(null);
@@ -61,6 +76,12 @@ export function ImageUploader({ onUpload, allTags = [], className }: ImageUpload
 
   const selected =
     pending.find((p) => p.id === selectedId) || pending[pending.length - 1] || null;
+
+  React.useEffect(() => {
+    const parsed = parsePastedItemId(initialItemId ?? "");
+    setItemIdInput(parsed.ok && parsed.value ? parsed.value : "");
+    setItemIdError(null);
+  }, [initialItemId]);
 
   const processFiles = async (files: FileList | File[], prefillFrom?: PendingFile) => {
     const fileArray = Array.from(files).filter((f) => f.type.startsWith("image/"));
@@ -230,9 +251,21 @@ export function ImageUploader({ onUpload, allTags = [], className }: ImageUpload
     });
   };
 
+  const resetItemIdField = () => {
+    const parsed = parsePastedItemId(initialItemId ?? "");
+    setItemIdInput(parsed.ok && parsed.value ? parsed.value : "");
+    setItemIdError(null);
+  };
+
   const handleCommit = async () => {
     const ready = pending.filter((p) => p.status === "ready");
     if (ready.length === 0) return;
+
+    const parsed = parsePastedItemId(itemIdInput);
+    if (!parsed.ok) {
+      setItemIdError(ITEM_ID_ERROR);
+      return;
+    }
 
     setIsUploading(true);
     try {
@@ -240,6 +273,7 @@ export function ImageUploader({ onUpload, allTags = [], className }: ImageUpload
       const classTags = [category, location, itemType, itemName]
         .map((s) => s.trim())
         .filter(Boolean);
+      const itemId = parsed.value ?? uuidv4();
 
       const images: KnowledgeImage[] = ready.map((p, index) => {
         const mergedTags = Array.from(
@@ -281,7 +315,9 @@ export function ImageUploader({ onUpload, allTags = [], className }: ImageUpload
       setCategory("");
       setLocation("");
       setItemType("");
+      setTags([]);
       setSelectedId(null);
+      resetItemIdField();
     } catch (err) {
       console.error(err);
       toast.error("Failed to save images");
@@ -305,6 +341,31 @@ export function ImageUploader({ onUpload, allTags = [], className }: ImageUpload
           <p className="text-xs text-muted-foreground">
             All photos below will be grouped under this item.
           </p>
+        </div>
+
+        <div className="space-y-1.5">
+          <Label htmlFor="kb-item-id">Knowledge-base itemId</Label>
+          <Input
+            id="kb-item-id"
+            placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+            value={itemIdInput}
+            onChange={(e) => {
+              setItemIdInput(e.target.value);
+              if (itemIdError) setItemIdError(null);
+            }}
+            disabled={isUploading}
+            aria-invalid={!!itemIdError}
+            className="font-mono text-xs"
+            autoComplete="off"
+            spellCheck={false}
+          />
+          {itemIdError ? (
+            <p className="text-xs text-destructive">{itemIdError}</p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              Paste the notebook itemId. Leave blank to create an unlinked gallery.
+            </p>
+          )}
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -605,6 +666,7 @@ export function ImageUploader({ onUpload, allTags = [], className }: ImageUpload
               setItemType("");
               setTags([]);
               setSelectedId(null);
+              resetItemIdField();
             }}
             disabled={isUploading}
           >

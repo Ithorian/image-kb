@@ -36,6 +36,8 @@ import {
   formatDate,
   downloadDataUrl,
   cn,
+  parsePastedItemId,
+  ITEM_ID_ERROR,
 } from "@/lib/utils";
 import { exportAnnotatedImage } from "@/lib/annotation-utils";
 import { recommendFilename } from "@/lib/filename-recommender";
@@ -67,6 +69,7 @@ export function ImageDetail({
   const [local, setLocal] = useState<KnowledgeImage | null>(null);
   const [saving, setSaving] = useState(false);
   const [editMode, setEditMode] = useState(false);
+  const [itemIdError, setItemIdError] = useState<string | null>(null);
 
   const editScrollRef = useRef<HTMLDivElement>(null);
 
@@ -74,6 +77,7 @@ export function ImageDetail({
     if (image) {
       setLocal({ ...image });
       setEditMode(false);
+      setItemIdError(null);
     } else {
       setLocal(null);
     }
@@ -89,8 +93,11 @@ export function ImageDetail({
   }, [editMode]);
 
   const related = useMemo(() => {
-    if (!local?.itemId) return local ? [local] : [];
-    return getRelatedImages(allImages, local.itemId);
+    if (!local) return [];
+    const persisted = allImages.find((i) => i.id === local.id);
+    const groupId = persisted?.itemId;
+    if (!groupId) return [local];
+    return getRelatedImages(allImages, groupId);
   }, [allImages, local]);
 
   if (!local) return null;
@@ -221,11 +228,52 @@ export function ImageDetail({
     handleFieldChange("notes", notes);
   };
 
+  const handleItemIdChange = (value: string) => {
+    setItemIdError(null);
+    setLocal((prev) =>
+      prev
+        ? { ...prev, itemId: value, updatedAt: new Date().toISOString() }
+        : null
+    );
+  };
+
   const handleSave = async () => {
     if (!local) return;
+    const parsed = parsePastedItemId(local.itemId ?? "");
+    if (!parsed.ok) {
+      setItemIdError(ITEM_ID_ERROR);
+      return;
+    }
+    const nextItemId = parsed.value;
+    const persisted = allImages.find((i) => i.id === local.id);
+    const persistedItemId = persisted?.itemId;
+    const groupPhotos = persistedItemId
+      ? getRelatedImages(allImages, persistedItemId)
+      : [local];
+    const applyAll =
+      groupPhotos.length > 1 &&
+      nextItemId !== persistedItemId &&
+      confirm(
+        `Apply this itemId to all ${groupPhotos.length} photos in this group?`
+      );
+
     setSaving(true);
     try {
-      onUpdate(local);
+      const now = new Date().toISOString();
+      if (applyAll) {
+        for (const img of groupPhotos) {
+          const updated =
+            img.id === local.id
+              ? { ...local, itemId: nextItemId, updatedAt: now }
+              : { ...img, itemId: nextItemId, updatedAt: now };
+          onUpdate(updated);
+        }
+        setLocal({ ...local, itemId: nextItemId, updatedAt: now });
+      } else {
+        const updated = { ...local, itemId: nextItemId, updatedAt: now };
+        onUpdate(updated);
+        setLocal(updated);
+      }
       toast.success("Image updated");
     } catch {
       toast.error("Failed to save");
@@ -400,17 +448,39 @@ export function ImageDetail({
                     Edit mode — update fields, then Save changes
                   </p>
 
-                  {local.itemId && (
-                    <div className="space-y-2">
-                      <Label htmlFor="itemName">Item name</Label>
-                      <Input
-                        id="itemName"
-                        value={local.itemName || ""}
-                        onChange={(e) => handleItemNameChange(e.target.value)}
-                        placeholder="e.g. Kitchen Dishwasher"
-                      />
-                    </div>
-                  )}
+                  <div className="space-y-2">
+                    <Label htmlFor="kb-item-id">Knowledge-base itemId</Label>
+                    <Input
+                      id="kb-item-id"
+                      value={local.itemId || ""}
+                      onChange={(e) => handleItemIdChange(e.target.value)}
+                      placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                      className="font-mono text-xs"
+                      autoComplete="off"
+                      spellCheck={false}
+                      aria-invalid={!!itemIdError}
+                    />
+                    {itemIdError ? (
+                      <p className="text-xs text-destructive">{itemIdError}</p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">
+                        Paste the notebook itemId. Leave blank to unlink this photo.
+                        {related.length > 1
+                          ? " Saving a change will offer to apply it to all photos in this group."
+                          : ""}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="space-y-2">
+                    <Label htmlFor="itemName">Item name</Label>
+                    <Input
+                      id="itemName"
+                      value={local.itemName || ""}
+                      onChange={(e) => handleItemNameChange(e.target.value)}
+                      placeholder="e.g. Kitchen Dishwasher"
+                    />
+                  </div>
 
                   <div className="space-y-3">
                     <ExtensibleSelect

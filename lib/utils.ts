@@ -50,3 +50,24 @@ export function fileToDataUrl(file: Blob): Promise<string> {
     reader.readAsDataURL(file);
   });
 }
+
+/** Knowledge-base itemId: 8-4-4-4-12 hex (UUID-ish). */
+const ITEM_ID_RE =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isItemId(value: string): boolean {
+  return ITEM_ID_RE.test(value.trim());
+}
+
+export const ITEM_ID_ERROR =
+  "Enter a valid itemId (8-4-4-4-12 hex) or leave blank.";
+
+/** Blank is valid (caller may auto-mint). Invalid paste is not. */
+export function parsePastedItemId(
+  raw: string
+): { ok: true; value: string | undefined } | { ok: false } {
+  const trimmed = raw.trim();
+  if (!trimmed) return { ok: true, value: undefined };
+  if (ITEM_ID_RE.test(trimmed)) return { ok: true, value: trimmed };
+  return { ok: false };
+}
